@@ -34,10 +34,10 @@ contents=[
 
 output_text = gemini_main_func.generate_text_gemini(contents, thinking_budget=-1, system_instruction=system_instruction)
 
-# Voice Vox
-# file_path = voice.synthesize_voice(output_text, speaker=14, filename="output.wav")
-# voice.play_wav(file_path)
-
 # 機械音声
 engine.say(output_text)
 engine.runAndWait()
+
+# Voice Vox(処理に時間がかかる)
+# file_path = voice.synthesize_voice(output_text, speaker=14, filename="output.wav")
+# voice.play_wav(file_path)
