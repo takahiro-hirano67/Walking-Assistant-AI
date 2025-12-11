@@ -1,7 +1,6 @@
 from google import genai
 from google.genai import types
 from src.gemini_api import gemini_main_func
-from src.voice_vox import voice
 import config
 import pyttsx3
 
@@ -13,7 +12,7 @@ engine.setProperty('rate', 180)  # ややゆっくり
 client = genai.Client(api_key=config.GEMINI_API_KEY) # APIキー認証
 gemini_main_func.set_client(client)
 
-with open('img\地下鉄のホーム.jpg', 'rb') as f:
+with open('img/地下鉄のホーム.jpg', 'rb') as f:
     image_bytes = f.read()
 
 system_instruction = """
