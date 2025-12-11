@@ -1,18 +1,36 @@
 from google import genai
 from google.genai import types
 from src.gemini_api import gemini_main_func
-import config
+from picamera2 import Picamera2
 import pyttsx3
+import time
+import config
 
 # 機械音声
 engine = pyttsx3.init()
-engine.setProperty('rate', 180)  # ややゆっくり
+engine.setProperty('rate', 150)  # ややゆっくり
 
 # Gemini-API
 client = genai.Client(api_key=config.GEMINI_API_KEY) # APIキー認証
 gemini_main_func.set_client(client)
 
-with open('img/地下鉄のホーム.jpg', 'rb') as f:
+# camera
+
+# カメラの初期化
+picam2 = Picamera2()
+
+# カメラを起動して、画質調整のために2秒待つ
+picam2.start()
+time.sleep(2)
+
+# 写真を撮って保存
+picam2.capture_file("img/test.jpg")
+
+# 終了
+picam2.stop()
+print("撮影完了: test.jpg")
+
+with open('img/test.jpg', 'rb') as f:
     image_bytes = f.read()
 
 system_instruction = """
@@ -33,7 +51,3 @@ output_text = gemini_main_func.generate_text_gemini(contents, thinking_budget=0,
 # 機械音声
 engine.say(output_text)
 engine.runAndWait()
-
-# Voice Vox(処理に時間がかかる)
-# file_path = voice.synthesize_voice(output_text, speaker=14, filename="output.wav")
-# voice.play_wav(file_path)
