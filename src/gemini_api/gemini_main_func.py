@@ -1,5 +1,4 @@
 from google.genai import types
-from . import gemini_sub_func
 
 client = None
 
@@ -8,8 +7,16 @@ def set_client(c):
     global client
     client = c
 
-# テキスト生成関数（引数でオプションを指定）
-def generate_text_gemini(
+# メタデータ確認関数
+def print_usage_metadata(usage_metadata):
+    print("\n" + "="*30)
+    print(f"prompt_tokens : {usage_metadata.prompt_token_count}")
+    print(f"thought_tokens: {usage_metadata.thoughts_token_count}")
+    print(f"answer_tokens : {usage_metadata.candidates_token_count}")
+    print(f"total_tokens  : {usage_metadata.total_token_count}")
+
+# テキスト生成関数（引数でサンプリングパラメータ等オプションを指定）
+def generate_text(
         contents,                # プロンプト
         system_instruction=None, # システム指示 (None=なし, 文字列=システム指示を設定)
         thinking_budget=-1,      # 思考プロセスで使用するトークンの上限 (公式初期値: -1, 範囲: 0～24576, 0=なし, -1=動的思考 ※思考で利用したトークンもAPI利用コストに上乗せ)
@@ -19,7 +26,7 @@ def generate_text_gemini(
         topK=64,                 # 次のトークンを選択するために、上位64個のトークンを考慮（公式初期値: 64, 範囲: 固定）
         frequencyPenalty=0.0,    # 頻度ペナルティ: 正の値→ 重複したトークンの生成を抑制する（公式初期値: 0.0, 範囲: -2.0～2.0 ※負の値は繰り返しを助長）
         presencePenalty=0.0,     # 存在ペナルティ: 正の値→ 新しいトークンの生成を促す（公式初期値: 0.0, 範囲: -2.0～2.0 ※負の値は繰り返しを助長）
-        maxOutputTokens=65535,   # 最大出力トークン (公式初期値: 65535, 上限: 65535)
+        maxOutputTokens=8192,   # 最大出力トークン (公式初期値: 65535, 上限: 65535)
         candidateCount=1,        # 生成の候補 (公式初期値: 1 ※増やすと消費トークン数が増加)
         stopSequences=None,      # 停止シーケンス (None=なし, リスト=指定された文字列で生成停止)
         responseMimeType="text/plain",  # レスポンス形式 ("text/plain" or "application/json")
@@ -52,14 +59,16 @@ def generate_text_gemini(
     )
 
     # 2. ストリーミングリクエストを送信
-    response_stream = client.models.generate_content_stream(
+    response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=contents,
         config=generation_config
     )
-    output_text, usage_metadata = gemini_sub_func.stream(response_stream)
+    output_text = response.text
 
-    if usage_metadata:
-        gemini_sub_func.print_usage_metadata(usage_metadata) # トークン利用状況表示
-    
+    print(output_text)
+
+    if response.usage_metadata:
+        print_usage_metadata(response.usage_metadata) # トークン利用状況表示
+
     return output_text
