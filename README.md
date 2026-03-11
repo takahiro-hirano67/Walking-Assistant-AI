@@ -4,7 +4,8 @@
 
 視覚障がい者向けの白杖装着型AIデバイスのプロトタイプ実装です。白杖に取り付けたカメラで周囲を撮影し、AIが生成した説明を音声で伝えることで、「風景を知る喜び」を提供します。
 
-![プロトタイプ画像](assets/images/prototype.jpg)
+<img width="314" height="600" alt="プロトタイプ画像" src="https://github.com/user-attachments/assets/54239550-a0ac-4677-860f-3f28cc5e1c20" />
+
 _白杖に装着されたプロトタイプデバイス_
 
 ---
@@ -192,3 +193,4 @@ _白杖に装着されたプロトタイプデバイス_
 - [OrCam MyEye2 | EMIRA](https://emira-t.jp/special/18750/)
 - [Eye Navi公式サイト](https://eyenavi.biz/)
 - [「見えない旅」の面白さ | 日本障害者リハビリテーション協会](https://www.dinf.ne.jp/doc/japanese/para/tabi/tabi02.html)
+
