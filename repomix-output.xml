@@ -1,0 +1,836 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  battery_func/
+    battery_check.py
+  gemini_api/
+    gemini_main_func.py
+  voice_func/
+    open_jtalk.py
+.env.example
+.gitignore
+config.py
+main.py
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/battery_func/battery_check.py">
+import smbus
+import time
+
+# I2Cの設定
+bus = smbus.SMBus(1)
+address = 0x36 # X1200のバッテリー管理チップのアドレス
+
+def read_voltage():
+    read = bus.read_word_data(address, 2)
+    swapped = bytes([read & 0xFF, (read >> 8) & 0xFF]) # エンディアン変換
+    voltage = int.from_bytes(swapped, 'big') * 1.25 / 1000 / 16
+    return voltage
+
+def read_capacity():
+    read = bus.read_word_data(address, 4)
+    swapped = bytes([read & 0xFF, (read >> 8) & 0xFF])
+    capacity = int.from_bytes(swapped, 'big') / 256
+    return capacity
+
+print(f"電圧: {read_voltage():.2f} V")
+print(f"残量: {read_capacity():.1f} %")
+</file>
+
+<file path="src/voice_func/open_jtalk.py">
+import subprocess
+
+# --- Open JTalkの設定関数 ---
+def jtalk(text):
+    # 一時的な音声ファイルの保存先
+    outfile = "voice/temp_voice.wav"
+    
+    # Open JTalkのコマンドオプション
+    # 辞書のパス (aptでインストールした場合の標準パス)
+    dic_path = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
+    # 音声データのパス (標準の男性ロボットボイス)
+    # voice_path = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
+    voice_path = "/usr/share/hts-voice/mei/mei_normal.htsvoice"
+    
+    # コマンドの組み立て
+    # -x: 辞書, -m: 音声データ, -ow: 出力ファイル, -r: 読み上げ速度(1.0が標準)
+    cmd = [
+        'open_jtalk',
+        '-x', dic_path,
+        '-m', voice_path,
+        '-ow', outfile,
+        '-r', '1.2'  # 速度調整: 0.8ならゆっくり、1.2なら速く
+    ]
+    
+    # プロセスを実行してテキストを渡す
+    c = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    c.stdin.write(text.encode('utf-8'))
+    c.stdin.close()
+    c.wait()
+    
+    # 音声を再生する (aplayを使用)
+    subprocess.run(['aplay', '-q', outfile])
+    
+    # 使い終わったファイルを削除（お好みで）
+    # os.remove(outfile)
+</file>
+
+<file path=".env.example">
+# GEMINI_API_KEY = "AIzaSyAlb0IiVDpsMVa6WmbNvkI_9aY-R-_tfpE"
+GEMINI_API_KEY = "AIzaSyDEcAOEhzONfERaOyseCoiU75UtnCQc-oY"
+</file>
+
+<file path="src/gemini_api/gemini_main_func.py">
+from google.genai import types
+
+client = None
+
+# 認証情報をセット（このモジュール内でAPI認証を実行しなくていいようにするため。）
+def set_client(c):
+    global client
+    client = c
+
+# メタデータ確認関数
+def print_usage_metadata(usage_metadata):
+    print("\n" + "="*30)
+    print(f"prompt_tokens : {usage_metadata.prompt_token_count}")
+    print(f"thought_tokens: {usage_metadata.thoughts_token_count}")
+    print(f"answer_tokens : {usage_metadata.candidates_token_count}")
+    print(f"total_tokens  : {usage_metadata.total_token_count}")
+
+# テキスト生成関数（引数でサンプリングパラメータ等オプションを指定）
+def generate_text(
+        contents,                # プロンプト
+        system_instruction=None, # システム指示 (None=なし, 文字列=システム指示を設定)
+        thinking_budget=-1,      # 思考プロセスで使用するトークンの上限 (公式初期値: -1, 範囲: 0～24576, 0=なし, -1=動的思考 ※思考で利用したトークンもAPI利用コストに上乗せ)
+        include_thoughts=True,   # 思考の要約を表示 (デバッグ用)
+        temperature=0.7,         # 生成のランダム性 (公式初期値: 1.0, 範囲: 0.0～2.0)
+        topP=0.95,               # モデルが考慮するトークン。上位から順に確率の合計が設定した値になるまで選択（公式初期値: 0.95, 範囲: 0.0～1.0）
+        topK=64,                 # 次のトークンを選択するために、上位64個のトークンを考慮（公式初期値: 64, 範囲: 固定）
+        frequencyPenalty=0.0,    # 頻度ペナルティ: 正の値→ 重複したトークンの生成を抑制する（公式初期値: 0.0, 範囲: -2.0～2.0 ※負の値は繰り返しを助長）
+        presencePenalty=0.0,     # 存在ペナルティ: 正の値→ 新しいトークンの生成を促す（公式初期値: 0.0, 範囲: -2.0～2.0 ※負の値は繰り返しを助長）
+        maxOutputTokens=8192,   # 最大出力トークン (公式初期値: 65535, 上限: 65535)
+        candidateCount=1,        # 生成の候補 (公式初期値: 1 ※増やすと消費トークン数が増加)
+        stopSequences=None,      # 停止シーケンス (None=なし, リスト=指定された文字列で生成停止)
+        responseMimeType="text/plain",  # レスポンス形式 ("text/plain" or "application/json")
+        ):
+
+
+    global client
+    if client is None:
+        raise ValueError("clientがセットされていません。set_client()でセットしてください。")
+
+    # 1. 設定オブジェクトを作成
+    generation_config = types.GenerateContentConfig(
+        # 思考プロセスの設定
+        thinking_config=types.ThinkingConfig(
+            thinking_budget=thinking_budget,
+            include_thoughts=include_thoughts
+            ),
+        # システムプロンプトとツール
+        system_instruction=system_instruction,
+        # サンプリングパラメータ等
+        temperature=temperature,
+        topP=topP,
+        topK=topK,
+        frequencyPenalty=frequencyPenalty,
+        presencePenalty=presencePenalty,
+        maxOutputTokens=maxOutputTokens,
+        candidateCount=candidateCount,
+        stop_sequences=stopSequences,
+        responseMimeType=responseMimeType,
+    )
+
+    # 2. ストリーミングリクエストを送信
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=contents,
+        config=generation_config
+    )
+    output_text = response.text
+
+    print(output_text)
+
+    if response.usage_metadata:
+        print_usage_metadata(response.usage_metadata) # トークン利用状況表示
+
+    return output_text
+</file>
+
+<file path=".gitignore">
+.env
+*.png
+*.jpeg
+*.jpg
+*.wav
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#   Usually these files are written by a python script from a template
+#   before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+# Pipfile.lock
+
+# UV
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+# uv.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+# poetry.lock
+# poetry.toml
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
+#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
+# pdm.lock
+# pdm.toml
+.pdm-python
+.pdm-build/
+
+# pixi
+#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
+# pixi.lock
+#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
+#   in the .venv directory. It is recommended not to include this directory in version control.
+.pixi
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# Redis
+*.rdb
+*.aof
+*.pid
+
+# RabbitMQ
+mnesia/
+rabbitmq/
+rabbitmq-data/
+
+# ActiveMQ
+activemq-data/
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#   JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#   be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#   and can be added to the global gitignore or merged into this file.  For a more nuclear
+#   option (not recommended) you can uncomment the following to ignore the entire idea folder.
+# .idea/
+
+# Abstra
+#   Abstra is an AI-powered process automation framework.
+#   Ignore directories containing user credentials, local state, and settings.
+#   Learn more at https://abstra.io/docs
+.abstra/
+
+# Visual Studio Code
+#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
+#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#   you could uncomment the following to ignore the entire vscode folder
+# .vscode/
+
+# Ruff stuff:
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc
+
+# Marimo
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+
+# Streamlit
+.streamlit/secrets.toml
+</file>
+
+<file path="config.py">
+import os
+from dotenv import load_dotenv
+
+# .envファイルを読み込む
+load_dotenv()
+
+# os.getenv()を使って環境変数の値を取得する
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+</file>
+
+<file path="README.md">
+# Walking-Assistant-AI
+
+白杖に取り付けた小型カメラで撮影。
+写真を小型コンピュータに転送する。
+生成AIが説明文を生成する。
+説明文を音声に変換。
+Bluetoothでワイヤレスイヤホンに送信して再生。
+
+```
+Walking-Assistant-AI
+├─ README.md
+├─ config.py
+├─ main.py
+├─ repomix-output.xml
+└─ src
+   ├─ battery_func
+   │  └─ battery_check.py
+   ├─ gemini_api
+   │  └─ gemini_main_func.py
+   └─ voice_func
+      └─ open_jtalk.py
+
+```
+</file>
+
+<file path="main.py">
+import keyboard # キー入力用（ボタン入力）
+import time
+import re
+import threading # バックグラウンド処理用
+import subprocess
+import pygame # 再生用(SE/音声)
+import config
+from datetime import datetime
+from picamera2 import Picamera2 # カメラ
+from google import genai # Gemini API
+from google.genai import types
+from src.gemini_api import gemini_main_func # テキスト生成関数
+# from src.battery_func import battery_check  # バッテリー状況確認
+
+# ==========================================
+# 定数・設定（キー設定 / フラグ / 音声ミキサー / Open-JTalk）
+# ==========================================
+
+# キー設定
+KEY_SIMPLE_MODE = '5'  # キーボードの「1」キー（簡易モード）
+KEY_DETAIL_MODE = '4'  # キーボードの「2」キー（詳細モード）
+KEY_BATTERY_CHK = '3'  # キーボードの「3」キー（バッテリー残量確認）
+
+# 連打防止用のフラグ
+is_processing = False
+
+# 音声再生を中断するためのフラグ
+stop_speech_flag = False
+
+# pygameのミキサー初期化（音質設定）
+pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
+
+## Open JTalkで使用するパス ##
+# 辞書のパス (aptでインストールした場合の標準パス)
+dic_path = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
+# 音声データのパス 
+# voice_path = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice" # 標準の男性ロボットボイス
+voice_path = "/usr/share/hts-voice/mei/mei_normal.htsvoice" # 女性ボイス（メイ）
+
+# ==========================================
+# プロンプト（システムプロンプト / 簡易モードプロンプト / 詳細モードプロンプト）
+# ==========================================
+
+system_prompt = """
+あなたは視覚障がいを持つ方の歩行補助を行うAIアシスタントです。あなたに与えられる写真は、白杖から撮影されたものです。
+指示に従い、視覚に頼らず状況がわかるように説明をしてください。
+""".strip()
+
+simple_mode_prompt = """
+視覚障がいを持つ方に向けて、この写真に写っているものや状況を教えてください。
+生成された説明文はその場で読み上げられるため、2～3文程度で記述してください。
+""".strip()
+
+# 仮
+detail_mode_prompt = """
+視覚障がいを持つ方に向けて、この写真に写っているものや状況を教えてください。
+生成された説明文はその場で読み上げられます。自然に音声が聞き取れるよう、箇条書きや見出し、その他不要な記号は含めないでください。
+""".strip()
+
+# ==========================================
+# 補助関数（現在時刻 / 音声停止 / スレッド管理）
+# ==========================================
+
+def get_now():
+    "現在時刻を文字列にして返す関数（ファイル名用）"
+    td = datetime.now()
+    formatted_now = td.strftime('%Y-%m-%d-%H-%M-%S')
+    return formatted_now
+
+def stop_speaking():
+    """音声再生を強制停止するための関数"""
+    global stop_speech_flag
+    stop_speech_flag = True
+    
+    # 読み上げを停止
+    pygame.mixer.stop()
+
+def start_thread(target_func, *args):
+    """
+    指定した関数を別スレッドで実行するヘルパー関数
+    これにより、キーボード入力がブロックされずに次の入力を受け付けられる
+    """
+    # 既に別スレッドが走っているかどうかのチェックは target_func 内で行う
+    thread = threading.Thread(target=target_func, args=args)
+    thread.daemon = True # メインプログラム終了時に道連れで終了させる
+    thread.start()
+
+# ==========================================
+# 主要関数（効果音 / 音声 / 撮影）
+# ==========================================
+
+def play_se(file_path):
+    "効果音を再生する関数 (pygame使用)"
+    try:
+        # 効果音の読み込みと再生
+
+        if pygame.mixer.music.get_busy():
+            pygame.mixer.music.stop() # 前の音が鳴っていたら止める
+        pygame.mixer.music.load(file_path)
+        # 音量調整
+        pygame.mixer.music.set_volume(0.5)
+        # 再生
+        pygame.mixer.music.play()
+        
+    except Exception as e:
+        print(f"SE再生エラー: {e}")
+
+
+def speak(text, file_name="system_voice"):
+    """音声を再生する関数"""
+    global stop_speech_flag
+    stop_speech_flag = False # フラグをリセット
+    
+    outfile = f"assets/audio/voice/{file_name}.wav"
+
+    # 1. テキストの前処理（改行を「。」に置換し、余計な空白を削除）
+    text = text.replace('\n', '。')
+
+    # 2. 「。」で文章を分割してリストにする
+    sentences = re.split(r'(?<=。)', text)
+    sentences = [s for s in sentences if s.strip()]
+
+    for sentence in sentences:
+        # ループの先頭でチェック（ここは既存の通り）
+        if stop_speech_flag:
+            print("再生を中断しました")
+            break
+
+        # 短すぎるテキストはスキップ
+        if len(sentence) < 2:
+            continue
+
+        # WAV生成
+        cmd = [
+            'open_jtalk',
+            '-x', dic_path,
+            '-m', voice_path,
+            '-ow', outfile,
+            '-g', '10', # 音量
+        ]
+        
+        try:
+            # Open JTalkを実行
+            process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            process.communicate(input=sentence.encode('utf-8'))
+
+            # 読み込み
+            voice_sound = pygame.mixer.Sound(outfile)
+            # 再生開始（既に別の音が鳴っていたら混ざって再生される）
+            channel = voice_sound.play()
+            
+            # channelが存在し、かつ再生中であれば待機
+            while channel and channel.get_busy():
+                if stop_speech_flag: # 停止フラグが立ったら即座に抜ける
+                    channel.stop()
+                    break
+                time.sleep(0.05)
+                
+        except Exception as e:
+            print(f"音声再生エラー: {e}")
+    
+
+def take_picture(file_name="temp_img"):
+    """撮影を実行する関数"""
+
+    try:
+        # 写真を撮って保存
+        picam2.capture_file(f"assets/images/{file_name}.jpg")
+
+        print(f"撮影完了: {file_name}.jpg")
+
+        with open(f'assets/images/{file_name}.jpg', 'rb') as f:
+            image_bytes = f.read()
+    except Exception as e:
+        print(f"撮影エラー: {e}")
+        return None
+    
+    return image_bytes
+
+# ==========================================
+# 各機能のハンドラ（簡易モード / 詳細モード / バッテリー残量確認）
+# ==========================================
+
+def run_ai_support(mode):
+    """指定されたモードで撮影&AI解説を行う"""
+    global is_processing
+
+    # 処理中なら「停止命令」を出してリターン（＝連打でストップ機能）
+    if is_processing:
+        stop_speaking()
+        play_se("assets/audio/sfx/chattering.wav")
+        print("処理を中断しました")
+        return
+
+    # 処理開始
+    is_processing = True # 処理開始フラグ
+    stop_speaking() # 念のため前の音声を消す
+
+    try:
+        # 1. 現在の日時取得（ファイル名用）
+        file_name = get_now() # 
+
+        # 2. 撮影
+        image_bytes = take_picture(file_name)
+        if image_bytes is None:
+            raise Exception("撮影に失敗")
+
+        # 3. 画像指定
+        contents = [
+            types.Part.from_bytes(
+                data=image_bytes,
+                mime_type='image/jpeg',
+            ),
+        ]
+
+        # 4. モード分岐-テキスト生成
+        if mode == "simple":
+            print(f"【簡易モード】")
+            play_se("assets/audio/sfx/start_simple.wav")
+
+            contents.append(simple_mode_prompt) # プロンプト指定
+            
+            # テキスト生成
+            output_text = gemini_main_func.generate_text(
+                contents,
+                thinking_budget=0,  # 思考プロセスなし
+                temperature=0.7,    # 確実性重視
+                system_instruction=system_prompt,
+            )
+
+        elif mode == "detail":
+            print(f"【詳細モード】")
+            contents.append(detail_mode_prompt) # プロンプト指定
+            play_se("assets/audio/sfx/start_detail.wav")
+
+            speak("生成しています。") # 詳細生成は思考プロセスが入る分、レスポンスが遅くなるため。待機が発生するが短いため許容範囲
+            
+            # テキスト生成
+            output_text = gemini_main_func.generate_text(
+                contents,
+                thinking_budget=-1, # 動的思考
+                temperature=1.0,    # 創造性重視
+                system_instruction=system_prompt,
+            )
+
+        else:
+            raise ValueError(f"不明なモード: {mode}")
+        
+        # 5. 生成テキスト読み上げ
+        speak(output_text, "main_voice")
+
+    except Exception as e:
+        play_se("assets/audio/sfx/error.wav")
+        print(f"エラー: {e}")
+        speak("エラーが発生しました")
+    finally:
+        is_processing = False # 処理終了フラグ
+
+# 認識しない場合があるため、プロトタイプではバッテリー認識機能はオフに
+# def check_battery_voice():
+#     """バッテリー残量を読み上げる"""
+#     global is_processing
+#     if is_processing: return # 処理中の場合は中断
+#     is_processing = True
+
+#     try:
+#         play_se("assets/audio/sfx/check_battery.wav")
+#         cap = battery_check.read_capacity()
+#         text = f"バッテリー残量は、およそ{int(cap)}パーセントです。"
+#         print(text)
+#         speak(text) # 音声読み上げ
+#     except Exception as e:
+#         play_se("assets/audio/sfx/error.wav")
+#         print(f"エラー: {e}")
+#     finally:
+#         is_processing = False # 処理終了フラグ
+
+
+# ==========================================
+# バックグラウンド処理（バッテリー残量定期監視）
+# ==========================================
+
+# def monitor_battery_background():
+#     """バックグラウンドで電池残量を監視し、減りすぎたら警告する"""
+#     while True:
+#         try:
+#             cap = battery_check.read_capacity()
+#             if cap < 15.0:
+#                 print("【警告】バッテリーが低下しています")
+#                 speak("バッテリーが残りわずかです。充電してください。")
+#                 time.sleep(300) # 警告後は5分黙る
+#         except:
+#             pass
+#         time.sleep(60) # 1分ごとにチェック
+
+# ==========================================
+# メイン処理
+# ==========================================
+
+if __name__ == "__main__":
+    # ====== Gemini-API ======
+    print("API認証中...")
+    client = genai.Client(api_key=config.GEMINI_API_KEY) # APIキー認証
+    gemini_main_func.set_client(client) # モジュールにAPIキーを反映
+
+    # ====== Camera ======
+    print("カメラを初期化中...")
+    picam2 = Picamera2()
+
+    # 解像度の設定（AI用のため、軽くする設定）
+    cam_config = picam2.create_still_configuration(main={"size": (1024, 768), "format": "RGB888"})
+    picam2.configure(cam_config)
+
+    # カメラ起動
+    picam2.start()
+
+    # 最初の1回だけ、画質が安定するのを待つ
+    print("画質調整のため待機中...")
+    time.sleep(2)
+
+    # システム準備完了通知
+    print("【システム準備完了。ボタン待機中】")
+    speak("システムを起動しました。")
+    play_se("assets/audio/sfx/setup.wav")
+
+    # キー割り当ての設定
+    # キーを押した瞬間に別スレッドが立ち上がり、キー監視スレッドは即座に解放される
+    keyboard.add_hotkey(KEY_SIMPLE_MODE, lambda: start_thread(run_ai_support, "simple"))
+    keyboard.add_hotkey(KEY_DETAIL_MODE, lambda: start_thread(run_ai_support, "detail"))
+    # keyboard.add_hotkey(KEY_BATTERY_CHK, lambda: start_thread(check_battery_voice))
+
+    # バッテリー監視スレッドの開始（メイン処理を止めないように別枠で動かす）
+    # t = threading.Thread(target=monitor_battery_background, daemon=True)
+    # t.start()
+
+    try:
+        # プログラムが終了しないように待機
+        keyboard.wait() # Ctrl + C が押されると KeyboardInterrupt エラーが発生して except に飛ぶ
+
+    except KeyboardInterrupt:
+        # Ctrl + C で中断された時の処理
+        print("\n【システム終了操作を検知しました】")
+        stop_speaking() # 喋ってたら止める
+        speak("システムを終了します。") 
+        play_se("assets/audio/sfx/finish.wav")
+        # 音声が読み上げ終わるのを少し待つ（即終了すると声が切れるため）
+        time.sleep(2)
+
+    finally:
+        # 正常終了でもエラー終了でも、必ず最後に実行される処理
+        print("カメラを停止しています...")
+        picam2.stop()
+        
+        # キーボードのフックを解除（明示的に）
+        keyboard.unhook_all()
+        print("【システム終了完了】")
+
+# 起動時はシステム権限が必要
+# sudo -E ./myvenv/bin/python main.py
+
+# スピーカー認識
+# sudo -E env PULSE_SERVER=unix:/run/user/$(id -u)/pulse/native ./myvenv/bin/python main.py
+
+# 外部2キーキーボードボタン対応操作:
+# 簡易モード5-->上
+# 詳細モード4-->下
+</file>
+
+</files>
